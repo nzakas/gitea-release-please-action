@@ -10552,6 +10552,7 @@ const signoff_commit_message_1 = __nccwpck_require__(74069);
 const git_file_utils_1 = __nccwpck_require__(32997);
 const https_proxy_agent_1 = __nccwpck_require__(77219);
 const http_proxy_agent_1 = __nccwpck_require__(23764);
+const gitea_1 = __nccwpck_require__(81765);
 class GitHub {
     constructor(options) {
         var _a;
@@ -10725,7 +10726,7 @@ class GitHub {
                 pull_number: number,
             });
             return {
-                headBranchName: response.data.head.ref,
+                headBranchName: (0, gitea_1.headBranchName)(response.data.head),
                 baseBranchName: response.data.base.ref,
                 number: response.data.number,
                 title: response.data.title,
@@ -10791,7 +10792,7 @@ class GitHub {
                 state: 'open',
             });
             return {
-                headBranchName: response.data.head.ref,
+                headBranchName: (0, gitea_1.headBranchName)(response.data.head),
                 baseBranchName: response.data.base.ref,
                 number: response.data.number,
                 title: response.data.title,
@@ -10943,14 +10944,19 @@ class GitHub {
         catch (e) {
             releasePleaseVersion = (__nccwpck_require__(85594).version);
         }
+        const octokit = new rest_1.Octokit({
+            baseUrl: apiUrl,
+            auth: options.token,
+            request: {
+                agent: this.createDefaultAgent(apiUrl, options.proxy),
+            },
+        });
+        // the links that pagination follows are not always under apiUrl
+        octokit.hook.before('request', requestOptions => {
+            requestOptions.url = (0, gitea_1.withApiUrl)(requestOptions.url, apiUrl);
+        });
         const apis = (_c = options.octokitAPIs) !== null && _c !== void 0 ? _c : {
-            octokit: new rest_1.Octokit({
-                baseUrl: apiUrl,
-                auth: options.token,
-                request: {
-                    agent: this.createDefaultAgent(apiUrl, options.proxy),
-                },
-            }),
+            octokit,
             request: request_1.request.defaults({
                 baseUrl: apiUrl,
                 headers: {
@@ -11251,7 +11257,7 @@ class GitHub {
                     pull.base.ref === targetBranch) {
                     results += 1;
                     yield {
-                        headBranchName: pull.head.ref,
+                        headBranchName: (0, gitea_1.headBranchName)(pull.head),
                         baseBranchName: pull.base.ref,
                         number: pull.number,
                         title: pull.title,
@@ -11485,7 +11491,7 @@ class GitHub {
                     number: pr.number,
                     title: pr.title,
                     baseRefName: pr.base.ref,
-                    headRefName: pr.head.ref,
+                    headRefName: (0, gitea_1.headBranchName)(pr.head),
                     labels: {
                         nodes: pr.labels.map(label => {
                             return { name: label.name };
@@ -21458,6 +21464,81 @@ function filterCommits(commits, changelogSections) {
 }
 exports.filterCommits = filterCommits;
 //# sourceMappingURL=filter-commits.js.map
+
+/***/ }),
+
+/***/ 81765:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+/*
+ * // Copyright 2020 Google LLC
+ * //
+ * // Licensed under the Apache License, Version 2.0 (the "License");
+ * // you may not use this file except in compliance with the License.
+ * // You may obtain a copy of the License at
+ * //
+ * //     https://www.apache.org/licenses/LICENSE-2.0
+ * //
+ * // Unless required by applicable law or agreed to in writing, software
+ * // distributed under the License is distributed on an "AS IS" BASIS,
+ * // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * // See the License for the specific language governing permissions and
+ * // limitations under the License.
+ * //
+ * //Modifications made by Joaquin Santana on 19/11/24, 11:00
+ */
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.withApiUrl = exports.headBranchName = void 0;
+const PULL_REQUEST_HEAD_REF = /^refs\/pull\/\d+\/head$/;
+/**
+ * Find the name of a pull request's head branch. Once the head branch has
+ * been deleted, Gitea reports the head ref as `refs/pull/{number}/head`,
+ * which is not a release branch name, so no release can be built from the
+ * pull request. The name of the deleted branch is still reported as the
+ * head's label.
+ *
+ * @param {object} head The `head` of a pull request from the REST API
+ * @returns {string} The name of the head branch
+ */
+function headBranchName(head) {
+    if (head.label && PULL_REQUEST_HEAD_REF.test(head.ref)) {
+        return head.label;
+    }
+    return head.ref;
+}
+exports.headBranchName = headBranchName;
+const API_PATH = '/api/v1';
+/**
+ * Point a link returned by the API at the URL the API was configured with.
+ * Gitea builds the pagination links in the `Link` header from its ROOT_URL
+ * setting, not from the address the request arrived at. When the API is
+ * reached at another address, such as an internal one, the next page would
+ * be requested from a host that may be unreachable or answer with a login
+ * page.
+ *
+ * @param {string} url The URL about to be requested
+ * @param {string} apiUrl The configured base URL of the API
+ * @returns {string} The same resource under `apiUrl` when `url` is an
+ *   absolute link to the Gitea API, and `url` otherwise
+ */
+function withApiUrl(url, apiUrl) {
+    const baseUrl = apiUrl.replace(/\/+$/, '');
+    // route templates, like /repos/{owner}/{repo}/pulls, are already relative
+    if (!baseUrl.endsWith(API_PATH) || !/^https?:\/\//i.test(url)) {
+        return url;
+    }
+    const { pathname, search } = new URL(url);
+    // ROOT_URL may have a path of its own in front of the API's
+    const index = pathname.indexOf(`${API_PATH}/`);
+    if (index === -1) {
+        return url;
+    }
+    return `${baseUrl}${pathname.slice(index + API_PATH.length)}${search}`;
+}
+exports.withApiUrl = withApiUrl;
+//# sourceMappingURL=gitea.js.map
 
 /***/ }),
 
