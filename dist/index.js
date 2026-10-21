@@ -10544,6 +10544,8 @@ const request_error_1 = __nccwpck_require__(10537);
 const errors_1 = __nccwpck_require__(10818);
 const MAX_ISSUE_BODY_SIZE = 65536;
 const MAX_SLEEP_SECONDS = 20;
+// Gitea's default MAX_RESPONSE_ITEMS; a server set lower returns fewer
+const RELEASES_PAGE_SIZE = 50;
 exports.GH_API_URL = 'https://api.github.com';
 exports.GH_GRAPHQL_URL = 'https://api.github.com';
 const logger_1 = __nccwpck_require__(18792);
@@ -11718,19 +11720,29 @@ class GitHub {
         return sha;
     }
     async releaseGraphQL(cursor) {
-        const response = await this.octokit.rest.repos.listReleases({
+        // the cursor is a page number. Gitea caps the page size at its
+        // MAX_RESPONSE_ITEMS setting, so a short page is not proof of the last
+        // page; only an empty one is.
+        const page = Number(cursor !== null && cursor !== void 0 ? cursor : 1);
+        const params = {
             owner: this.repository.owner,
             repo: this.repository.repo,
-        });
+            // Gitea names the page size limit, not per_page
+            limit: RELEASES_PAGE_SIZE,
+            page,
+        };
+        const response = await this.octokit.rest.repos.listReleases(params);
         if (!response.data.length) {
-            this.logger.warn('Could not find releases.');
+            if (page === 1) {
+                this.logger.warn('Could not find releases.');
+            }
             return null;
         }
         const releases = response.data;
         return {
             pageInfo: {
-                hasNextPage: false,
-                endCursor: undefined,
+                hasNextPage: true,
+                endCursor: String(page + 1),
             },
             data: releases
                 .filter(release => !!release.target_commitish)
